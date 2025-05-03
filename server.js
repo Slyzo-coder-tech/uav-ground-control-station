@@ -3,6 +3,8 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,9 +15,72 @@ const io = socketIo(server, {
     }
 });
 
+// Secret key for JWT
+const JWT_SECRET = 'your-secret-key'; // In production, use environment variable
+
+// Mock user database (in production, use a real database)
+const users = [
+    {
+        id: 1,
+        username: 'admin',
+        password: bcrypt.hashSync('admin123', 10) // Hashed password
+    }
+];
+
+// Authentication middleware
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) {
+            return res.status(403).json({ message: 'Invalid token' });
+        }
+        req.user = user;
+        next();
+    });
+};
+
+// Add CSP headers
+app.use((req, res, next) => {
+    res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'self' https://unpkg.com; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; " +
+        "style-src 'self' 'unsafe-inline' https://unpkg.com; " +
+        "img-src 'self' data: https://*.tile.openstreetmap.org http://localhost:3000; " +
+        "connect-src 'self' ws: wss:; " +
+        "font-src 'self' https://unpkg.com; " +
+        "frame-src 'self'; " +
+        "object-src 'none'; " +
+        "base-uri 'self'; " +
+        "form-action 'self'; " +
+        "frame-ancestors 'none'; " +
+        "upgrade-insecure-requests;"
+    );
+    next();
+});
+
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
+
+// Login endpoint
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    
+    const user = users.find(u => u.username === username);
+    if (!user || !bcrypt.compareSync(password, user.password)) {
+        return res.status(401).json({ message: 'Invalid username or password' });
+    }
+    
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
+    res.json({ token });
+});
 
 // Mission file handling
 const missionsDir = path.join(__dirname, 'public', 'missions');
@@ -59,75 +124,149 @@ app.get('/api/missions/:id', (req, res) => {
     res.json(JSON.parse(content));
 });
 
+// Socket.IO authentication middleware
+io.use((socket, next) => {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+        return next(new Error('Authentication error'));
+    }
+    
+    jwt.verify(token, JWT_SECRET, (err, decoded) => {
+        if (err) {
+            return next(new Error('Authentication error'));
+        }
+        socket.user = decoded;
+        next();
+    });
+});
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+    console.log('A user connected:', socket.id, 'Username:', socket.user.username);
 
-    // WebRTC signaling
-    socket.on('offer', (data) => {
-        console.log('Offer received from:', socket.id);
-        socket.broadcast.emit('offer', data);
+    // Track drone connection state
+    let isDroneConnected = false;
+    let lastTelemetryTimestamp = 0;
+    let telemetryTimeout = null;
+
+    // Handle connection errors
+    socket.on('error', (error) => {
+        console.error('Socket error:', error);
     });
 
-    socket.on('answer', (data) => {
-        console.log('Answer received from:', socket.id);
-        socket.broadcast.emit('answer', data);
+    // Handle ping for latency check
+    socket.on('ping', (callback) => {
+        if (typeof callback === 'function') {
+            callback();
+        }
     });
 
-    socket.on('ice-candidate', (data) => {
-        console.log('ICE candidate received from:', socket.id);
-        socket.broadcast.emit('ice-candidate', data);
+    // Handle telemetry with health check
+    socket.on('telemetry', (data) => {
+        lastTelemetryTimestamp = data.timestamp;
+        isDroneConnected = data.connected;
+        
+        // Clear existing timeout and set new one
+        if (telemetryTimeout) {
+            clearTimeout(telemetryTimeout);
+        }
+        
+        // Set timeout to detect telemetry interruption
+        telemetryTimeout = setTimeout(() => {
+            if (isDroneConnected) {
+                console.warn('Telemetry timeout for drone connection:', socket.id);
+                isDroneConnected = false;
+                io.emit('drone_connection_lost');
+            }
+        }, 5000); // 5 second timeout
+        
+        // Broadcast telemetry to all connected clients
+        socket.broadcast.emit('telemetry', data);
     });
 
-    // Mission handling
+    // Handle flight controls with validation
+    socket.on('flight_controls', (controls) => {
+        if (!isDroneConnected) {
+            socket.emit('error', { message: 'Drone not connected' });
+            return;
+        }
+        
+        // Validate control inputs
+        const validControls = {};
+        ['throttle', 'yaw', 'pitch', 'roll'].forEach(control => {
+            if (typeof controls[control] === 'number') {
+                validControls[control] = Math.max(-100, Math.min(100, controls[control]));
+            }
+        });
+        
+        socket.broadcast.emit('flight_controls', validControls);
+    });
+
+    // Handle camera controls with validation
+    socket.on('camera_control', (data) => {
+        if (!isDroneConnected) {
+            socket.emit('error', { message: 'Drone not connected' });
+            return;
+        }
+        
+        if (!['up', 'down', 'left', 'right'].includes(data.direction)) {
+            socket.emit('error', { message: 'Invalid camera direction' });
+            return;
+        }
+        
+        socket.broadcast.emit('camera_control', data);
+    });
+
+    // Handle flight mode changes with validation
+    socket.on('set_flight_mode', (data) => {
+        if (!isDroneConnected) {
+            socket.emit('error', { message: 'Drone not connected' });
+            return;
+        }
+        
+        const validModes = ['stabilize', 'alt_hold', 'loiter', 'auto', 'guided'];
+        if (!validModes.includes(data.mode)) {
+            socket.emit('error', { message: 'Invalid flight mode' });
+            return;
+        }
+        
+        socket.broadcast.emit('set_flight_mode', data);
+    });
+
+    // Handle mission management
     socket.on('load_mission', (mission) => {
-        console.log('Mission loaded:', mission.name);
-        socket.broadcast.emit('mission_loaded', mission);
+        if (!isDroneConnected) {
+            socket.emit('error', { message: 'Drone not connected' });
+            return;
+        }
+        
+        // Validate mission format
+        if (!mission || !Array.isArray(mission.waypoints)) {
+            socket.emit('error', { message: 'Invalid mission format' });
+            return;
+        }
+        
+        socket.broadcast.emit('load_mission', mission);
     });
 
-    socket.on('start_mission', () => {
-        console.log('Mission started by:', socket.id);
-        socket.broadcast.emit('mission_started');
+    // Handle vehicle commands
+    ['connect_drone', 'disconnect_drone', 'arm_vehicle', 'takeoff', 'land', 'emergency_stop',
+     'start_mission', 'pause_mission'].forEach(command => {
+        socket.on(command, () => {
+            if (!isDroneConnected && command !== 'connect_drone') {
+                socket.emit('error', { message: 'Drone not connected' });
+                return;
+            }
+            socket.broadcast.emit(command);
+        });
     });
 
-    socket.on('pause_mission', () => {
-        console.log('Mission paused by:', socket.id);
-        socket.broadcast.emit('mission_paused');
-    });
-
-    // Drone control
-    socket.on('connect_drone', () => {
-        console.log('Drone connection requested by:', socket.id);
-        socket.broadcast.emit('drone_connect');
-    });
-
-    socket.on('emergency_stop', () => {
-        console.log('Emergency stop requested by:', socket.id);
-        socket.broadcast.emit('drone_emergency_stop');
-    });
-
-    socket.on('arm_vehicle', () => {
-        console.log('Vehicle arm requested by:', socket.id);
-        socket.broadcast.emit('drone_arm');
-    });
-
-    socket.on('takeoff', () => {
-        console.log('Takeoff requested by:', socket.id);
-        socket.broadcast.emit('drone_takeoff');
-    });
-
-    socket.on('land', () => {
-        console.log('Land requested by:', socket.id);
-        socket.broadcast.emit('drone_land');
-    });
-
-    socket.on('return_to_launch', () => {
-        console.log('RTL requested by:', socket.id);
-        socket.broadcast.emit('drone_rtl');
-    });
-
+    // Handle disconnection cleanup
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
+        if (telemetryTimeout) {
+            clearTimeout(telemetryTimeout);
+        }
     });
 });
 
@@ -135,5 +274,5 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
-    console.log(`Open http://localhost:${PORT} in your browser`);
+    console.log(`Open http://localhost:${PORT}/login.html in your browser`);
 }); 

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - UAV Ground Control Station</title>
+    <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAGwSURBVFhH7ZZNSwJBGMf/u7q6rh+gQ9ChU4c6BC30IYLu3qNDB+lDdO7kLbp07BQUlGBvUBAUQUQQBL1QhJWVVlaa23/GndHVHBx3D0EP/GDYeWae53fDzO6OxDk/wD+GNP5PJEkacwaGYcB13ceRuKqqkGX5qe1hAp7noVgsIpPJwLbtx6woFAqhXq8jHo9DVdUHiYcJtFotZLNZ9Pt9zM3NwXEcWJYF0zSRz+eRSqUQiUSgKIogcTeBarWKWq2GcDiMRCKBTqeDfr+PaDSKVquFWCyGTqcjvgMhAZIgz/v9PprNJmzbRrfbxfLyMtrtNhYWFrC0tCQE6DsQEqCVU+qdTgflchnr6+sol8uYn59HMBhEoVDA5uYmAoGAEKIClNput4tms4lgMIhwOIxGo4FarYZEIoFyuYxQKIRkMgnP84QQFaBUk0S73Ua1WkUsFsPOzg4ymQyi0SgWFxdRKpUQj8cRDofFqh8QFfA8D6ZpYjAYYDAYwHVd6LoO13XFqPX1dWxsbGA4HArxEaICsixjdXUVjDEwxrC3twdd17G6uopUKoXd3V0xPcf5/QvJX+Yc5/gGC+JLxKcUh+QAAAAASUVORK5CYII=">
+    <link rel="stylesheet" href="css/styles.css">
+    <style>
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .form-group label {
+            font-weight: bold;
+        }
+
+        .form-group input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .login-btn {
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .login-btn:hover {
+            background-color: #0056b3;
+        }
+
+        .error-message {
+            color: #dc3545;
+            margin-top: 10px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>UAV Ground Control Station</h1>
+        <h2>Login</h2>
+        <form class="login-form" id="loginForm">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit" class="login-btn">Login</button>
+            <div id="errorMessage" class="error-message"></div>
+        </form>
+    </div>
+
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Store the token in localStorage
+                    localStorage.setItem('token', data.token);
+                    // Redirect to the main page
+                    window.location.href = '/';
+                } else {
+                    // Show error message
+                    const errorMessage = document.getElementById('errorMessage');
+                    errorMessage.textContent = data.message;
+                    errorMessage.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                const errorMessage = document.getElementById('errorMessage');
+                errorMessage.textContent = 'An error occurred during login';
+                errorMessage.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html> 

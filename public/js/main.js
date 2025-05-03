@@ -1,144 +1,256 @@
 // Initialize socket connection
-const socket = io();
+let socket = null;
+let map = null;
+let droneMarker = null;
+let isConnected = false;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_DELAY = 2000; // 2 seconds
 
-// DOM elements
-const statusIndicator = document.querySelector('.status-indicator');
-const statusText = document.querySelector('.status-text');
-const connectBtn = document.getElementById('connect-btn');
-const emergencyBtn = document.getElementById('emergency-btn');
-const armBtn = document.getElementById('arm-btn');
-const takeoffBtn = document.getElementById('takeoff-btn');
-const landBtn = document.getElementById('land-btn');
-const rtlBtn = document.getElementById('rtl-btn');
-
-// Map initialization
-let map;
-let droneMarker;
-let pathLayer;
-
-function initializeMap() {
+// Initialize the map
+function initMap() {
     map = L.map('map').setView([0, 0], 2);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
+        attribution: ''  // Remove attribution
     }).addTo(map);
+}
+
+// Initialize drone marker
+function initDroneMarker(position) {
+    if (!droneMarker) {
+        droneMarker = L.marker(position).addTo(map);
+    } else {
+        droneMarker.setLatLng(position);
+    }
+    map.setView(position, 15);
+}
+
+// Update connection status UI
+function updateConnectionStatus(status, message = '') {
+    const statusElement = document.getElementById('status');
+    const connectBtn = document.getElementById('connect-btn');
     
-    // Initialize path layer
-    pathLayer = L.layerGroup().addTo(map);
+    statusElement.textContent = status;
+    statusElement.className = 'status ' + (isConnected ? 'connected' : 'disconnected');
+    
+    if (message) {
+        console.log(message);
+    }
+    
+    // Update button state and text
+    connectBtn.textContent = isConnected ? 'Disconnect' : 'Connect';
+    connectBtn.className = isConnected ? 'connected' : '';
+    
+    // Update control buttons state
+    const controlButtons = document.querySelectorAll('.control-buttons button:not(#connect-btn)');
+    controlButtons.forEach(button => {
+        button.disabled = !isConnected;
+    });
+}
+
+// Initialize Socket.IO connection
+function initSocket() {
+    if (socket) {
+        socket.close();
+    }
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+        window.location.href = '/login.html';
+        return;
+    }
+
+    socket = io({
+        auth: {
+            token: token
+        },
+        reconnection: false // We'll handle reconnection manually
+    });
+
+    // Socket event handlers
+    socket.on('connect', () => {
+        console.log('Connected to server');
+        isConnected = true;
+        reconnectAttempts = 0;
+        updateConnectionStatus('Connected', 'Successfully connected to the server');
+    });
+
+    socket.on('disconnect', (reason) => {
+        console.log('Disconnected:', reason);
+        isConnected = false;
+        updateConnectionStatus('Disconnected', `Connection lost: ${reason}`);
+        
+        if (reason === 'io server disconnect') {
+            // Server disconnected us, retry connection
+            attemptReconnect();
+        }
+    });
+
+    socket.on('connect_error', (error) => {
+        console.error('Connection error:', error);
+        isConnected = false;
+        updateConnectionStatus('Connection Error', `Failed to connect: ${error.message}`);
+        
+        if (error.message.includes('Authentication error')) {
+            // Token might be invalid
+            localStorage.removeItem('token');
+            window.location.href = '/login.html';
+            return;
+        }
+        
+        attemptReconnect();
+    });
+
+    // Drone telemetry handling
+    socket.on('telemetry', (data) => {
+        updateTelemetry(data);
+        if (data.position) {
+            initDroneMarker([data.position.lat, data.position.lng]);
+        }
+    });
+
+    // Mission status updates
+    socket.on('mission_status', (status) => {
+        updateMissionStatus(status);
+    });
+
+    // Flight mode changes
+    socket.on('flight_mode_changed', (data) => {
+        document.getElementById('flight-mode-select').value = data.mode;
+    });
+}
+
+// Attempt to reconnect to the server
+function attemptReconnect() {
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        updateConnectionStatus('Connection Failed', 'Maximum reconnection attempts reached');
+        return;
+    }
+
+    reconnectAttempts++;
+    updateConnectionStatus('Reconnecting...', `Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+    
+    setTimeout(() => {
+        initSocket();
+    }, RECONNECT_DELAY * reconnectAttempts);
 }
 
 // Update telemetry display
 function updateTelemetry(data) {
-    document.getElementById('battery').textContent = `${data.battery}%`;
-    document.getElementById('speed').textContent = `${data.speed.toFixed(2)} m/s`;
-    document.getElementById('heading').textContent = `${data.heading.toFixed(1)}°`;
-    document.getElementById('latitude').textContent = data.latitude.toFixed(6);
-    document.getElementById('longitude').textContent = data.longitude.toFixed(6);
-    document.getElementById('altitude').textContent = `${data.altitude.toFixed(1)} m`;
-    document.getElementById('roll').textContent = `${data.roll.toFixed(1)}°`;
-    document.getElementById('pitch').textContent = `${data.pitch.toFixed(1)}°`;
-    document.getElementById('yaw').textContent = `${data.yaw.toFixed(1)}°`;
+    const telemetryPanel = document.getElementById('telemetry-panel');
+    telemetryPanel.innerHTML = `
+        <h3>Telemetry</h3>
+        <div class="telemetry-item">
+            <span>Altitude:</span> ${data.altitude?.toFixed(2) || 'N/A'} m
+        </div>
+        <div class="telemetry-item">
+            <span>Ground Speed:</span> ${data.groundSpeed?.toFixed(2) || 'N/A'} m/s
+        </div>
+        <div class="telemetry-item">
+            <span>Battery:</span> ${data.battery?.percentage || 'N/A'}%
+        </div>
+        <div class="telemetry-item">
+            <span>GPS Fix:</span> ${data.gps?.fix ? 'Yes' : 'No'}
+        </div>
+        <div class="telemetry-item">
+            <span>Satellites:</span> ${data.gps?.satellites || 'N/A'}
+        </div>
+    `;
 }
 
-// Update drone position on map
-function updateDronePosition(position) {
-    const { latitude, longitude, heading } = position;
-    
-    if (!droneMarker) {
-        // Create drone marker if it doesn't exist
-        const droneIcon = L.divIcon({
-            className: 'drone-marker',
-            html: '<i class="fas fa-plane" style="color: #e74c3c; font-size: 24px;"></i>',
-            iconSize: [24, 24],
-            iconAnchor: [12, 12]
-        });
-        
-        droneMarker = L.marker([latitude, longitude], { icon: droneIcon })
-            .addTo(map);
-    } else {
-        // Update existing marker position and rotation
-        droneMarker.setLatLng([latitude, longitude]);
-        const icon = droneMarker.getElement();
-        if (icon) {
-            icon.style.transform = `rotate(${heading}deg)`;
-        }
-    }
-    
-    // Update map view
-    map.setView([latitude, longitude], map.getZoom());
-    
-    // Add point to path
-    L.circleMarker([latitude, longitude], {
-        radius: 2,
-        color: '#e74c3c',
-        fillColor: '#e74c3c',
-        fillOpacity: 1
-    }).addTo(pathLayer);
+// Update mission status
+function updateMissionStatus(status) {
+    const missionBtn = document.getElementById('mission-btn');
+    missionBtn.textContent = status.active ? 'Stop Mission' : 'Load Mission';
+    missionBtn.className = status.active ? 'active' : '';
 }
-
-// Handle connection status
-function updateConnectionStatus(connected) {
-    statusIndicator.className = 'status-indicator' + (connected ? ' connected' : '');
-    statusText.textContent = connected ? 'Connected' : 'Disconnected';
-    
-    // Update button states
-    const buttons = [armBtn, takeoffBtn, landBtn, rtlBtn];
-    buttons.forEach(btn => btn.disabled = !connected);
-}
-
-// Event listeners
-connectBtn.addEventListener('click', () => {
-    socket.emit('connect_drone');
-});
-
-emergencyBtn.addEventListener('click', () => {
-    if (confirm('Are you sure you want to perform an emergency stop?')) {
-        socket.emit('emergency_stop');
-        showNotification('Emergency stop activated', 'error');
-    }
-});
-
-armBtn.addEventListener('click', () => {
-    socket.emit('arm_vehicle');
-    showNotification('Vehicle armed', 'success');
-});
-
-takeoffBtn.addEventListener('click', () => {
-    socket.emit('takeoff');
-    showNotification('Takeoff initiated', 'success');
-});
-
-landBtn.addEventListener('click', () => {
-    socket.emit('land');
-    showNotification('Landing initiated', 'info');
-});
-
-rtlBtn.addEventListener('click', () => {
-    socket.emit('return_to_launch');
-    showNotification('Return to launch initiated', 'info');
-});
-
-// Socket event handlers
-socket.on('connect', () => {
-    showNotification('Connected to server', 'success');
-});
-
-socket.on('disconnect', () => {
-    showNotification('Disconnected from server', 'error');
-    updateConnectionStatus(false);
-});
-
-socket.on('drone_status', (status) => {
-    updateConnectionStatus(status.connected);
-    updateTelemetry(status.telemetry);
-    updateDronePosition(status.position);
-});
-
-socket.on('error', (error) => {
-    showNotification(error.message, 'error');
-});
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
-    initializeMap();
-    showNotification('Ground Control Station initialized', 'info');
+    // Initialize map
+    initMap();
+    
+    // Initialize socket connection
+    initSocket();
+    
+    // Connect/Disconnect button handler
+    document.getElementById('connect-btn').addEventListener('click', () => {
+        if (isConnected) {
+            socket.disconnect();
+        } else {
+            initSocket();
+        }
+    });
+
+    // Flight controls handlers
+    const controls = ['throttle', 'yaw', 'pitch', 'roll'];
+    controls.forEach(control => {
+        const slider = document.getElementById(control);
+        slider.addEventListener('input', () => {
+            if (isConnected) {
+                socket.emit('flight_controls', {
+                    [control]: parseFloat(slider.value)
+                });
+            }
+        });
+        
+        // Reset slider to center on release
+        slider.addEventListener('mouseup', () => {
+            if (control !== 'throttle') {
+                slider.value = 0;
+                if (isConnected) {
+                    socket.emit('flight_controls', {
+                        [control]: 0
+                    });
+                }
+            }
+        });
+    });
+
+    // Flight mode handler
+    document.getElementById('flight-mode-select').addEventListener('change', (e) => {
+        if (isConnected) {
+            socket.emit('set_flight_mode', {
+                mode: e.target.value
+            });
+        }
+    });
+
+    // Camera control handlers
+    const cameraButtons = ['camera-up', 'camera-down', 'camera-left', 'camera-right'];
+    cameraButtons.forEach(buttonId => {
+        const button = document.getElementById(buttonId);
+        button.addEventListener('mousedown', () => {
+            if (isConnected) {
+                socket.emit('camera_control', {
+                    direction: buttonId.replace('camera-', '')
+                });
+            }
+        });
+    });
+
+    // Vehicle control handlers
+    document.getElementById('arm-btn').addEventListener('click', () => {
+        if (isConnected) socket.emit('arm_vehicle');
+    });
+
+    document.getElementById('takeoff-btn').addEventListener('click', () => {
+        if (isConnected) socket.emit('takeoff');
+    });
+
+    document.getElementById('land-btn').addEventListener('click', () => {
+        if (isConnected) socket.emit('land');
+    });
+
+    document.getElementById('emergency-stop-btn').addEventListener('click', () => {
+        if (isConnected) socket.emit('emergency_stop');
+    });
+
+    // Mission control handler
+    document.getElementById('mission-btn').addEventListener('click', () => {
+        if (isConnected) {
+            const isActive = document.getElementById('mission-btn').classList.contains('active');
+            socket.emit(isActive ? 'stop_mission' : 'load_mission');
+        }
+    });
 }); 
