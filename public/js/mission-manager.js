@@ -47,6 +47,9 @@ class MissionManager {
             
             this.currentMission = mission;
             this.displayMissionDetails(mission);
+            
+            // Update the map with mission waypoints
+            this.updateMissionOnMap(mission);
         } catch (error) {
             console.error('Error loading mission details:', error);
             showNotification('Failed to load mission details', 'error');
@@ -63,6 +66,32 @@ class MissionManager {
         `;
         
         this.missionDetails.innerHTML = details;
+    }
+    
+    updateMissionOnMap(mission) {
+        // Clear existing mission path
+        if (window.missionPath) {
+            window.missionPath.remove();
+        }
+        
+        // Create new path
+        const waypoints = mission.waypoints.map(wp => [wp.latitude, wp.longitude]);
+        window.missionPath = L.polyline(waypoints, {
+            color: '#3498db',
+            weight: 3,
+            opacity: 0.7,
+            dashArray: '5, 10'
+        }).addTo(window.map);
+        
+        // Add waypoint markers
+        mission.waypoints.forEach((wp, index) => {
+            L.marker([wp.latitude, wp.longitude])
+                .bindPopup(`Waypoint ${index + 1}<br>Altitude: ${wp.altitude}m<br>Speed: ${wp.speed}m/s`)
+                .addTo(window.map);
+        });
+        
+        // Fit map to mission bounds
+        window.map.fitBounds(window.missionPath.getBounds());
     }
     
     calculateTotalDistance(waypoints) {

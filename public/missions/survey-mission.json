@@ -1,0 +1,42 @@
+{
+    "name": "Aerial Survey Mission",
+    "description": "A comprehensive aerial survey mission covering a large area with multiple waypoints",
+    "waypoints": [
+        {
+            "latitude": 37.7749,
+            "longitude": -122.4194,
+            "altitude": 100,
+            "speed": 15
+        },
+        {
+            "latitude": 37.7750,
+            "longitude": -122.4195,
+            "altitude": 100,
+            "speed": 15
+        },
+        {
+            "latitude": 37.7751,
+            "longitude": -122.4196,
+            "altitude": 100,
+            "speed": 15
+        },
+        {
+            "latitude": 37.7752,
+            "longitude": -122.4197,
+            "altitude": 100,
+            "speed": 15
+        },
+        {
+            "latitude": 37.7753,
+            "longitude": -122.4198,
+            "altitude": 100,
+            "speed": 15
+        },
+        {
+            "latitude": 37.7754,
+            "longitude": -122.4199,
+            "altitude": 100,
+            "speed": 15
+        }
+    ]
+} 
