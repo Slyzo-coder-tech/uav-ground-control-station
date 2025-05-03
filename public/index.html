@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UAV Ground Control Station</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" />
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <i class="fas fa-drone-alt"></i>
+                <h1>UAV Ground Control Station</h1>
+            </div>
+            <div class="status">
+                <span class="status-indicator"></span>
+                <span class="status-text">Disconnected</span>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="map-container">
+                <div id="map"></div>
+            </div>
+
+            <div class="sidebar">
+                <div class="telemetry-panel">
+                    <h2><i class="fas fa-chart-line"></i> Telemetry</h2>
+                    <div class="telemetry-grid">
+                        <div class="telemetry-item">
+                            <span class="label">Battery</span>
+                            <span id="battery" class="value">0%</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="label">Speed</span>
+                            <span id="speed" class="value">0 m/s</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="label">Heading</span>
+                            <span id="heading" class="value">0°</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="label">Latitude</span>
+                            <span id="latitude" class="value">0.000000</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="label">Longitude</span>
+                            <span id="longitude" class="value">0.000000</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="label">Altitude</span>
+                            <span id="altitude" class="value">0 m</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="label">Roll</span>
+                            <span id="roll" class="value">0°</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="label">Pitch</span>
+                            <span id="pitch" class="value">0°</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="label">Yaw</span>
+                            <span id="yaw" class="value">0°</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-panel">
+                    <h2><i class="fas fa-gamepad"></i> Controls</h2>
+                    <div class="button-group">
+                        <button id="connect-btn" class="btn">
+                            <i class="fas fa-plug"></i> Connect
+                        </button>
+                        <button id="emergency-btn" class="btn danger">
+                            <i class="fas fa-exclamation-triangle"></i> Emergency Stop
+                        </button>
+                        <button id="arm-btn" class="btn">
+                            <i class="fas fa-lock"></i> Arm Vehicle
+                        </button>
+                        <button id="takeoff-btn" class="btn">
+                            <i class="fas fa-arrow-up"></i> Takeoff
+                        </button>
+                        <button id="land-btn" class="btn">
+                            <i class="fas fa-arrow-down"></i> Land
+                        </button>
+                        <button id="rtl-btn" class="btn">
+                            <i class="fas fa-home"></i> Return to Launch
+                        </button>
+                    </div>
+                </div>
+
+                <div class="video-panel">
+                    <h2><i class="fas fa-video"></i> Video Feed</h2>
+                    <div class="video-container">
+                        <video id="localVideo" autoplay playsinline muted></video>
+                        <video id="remoteVideo" autoplay playsinline></video>
+                    </div>
+                    <div class="video-controls">
+                        <button id="startCamera" class="btn">
+                            <i class="fas fa-camera"></i> Start Camera
+                        </button>
+                        <button id="stopCamera" class="btn" disabled>
+                            <i class="fas fa-stop"></i> Stop Camera
+                        </button>
+                        <button id="startStream" class="btn" disabled>
+                            <i class="fas fa-broadcast-tower"></i> Start Stream
+                        </button>
+                        <button id="stopStream" class="btn" disabled>
+                            <i class="fas fa-stop-circle"></i> Stop Stream
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mission-panel">
+                    <h2><i class="fas fa-map-marked-alt"></i> Missions</h2>
+                    <div class="mission-controls">
+                        <select id="missionList"></select>
+                        <button id="loadMission" class="btn">
+                            <i class="fas fa-upload"></i> Load Mission
+                        </button>
+                        <button id="startMission" class="btn">
+                            <i class="fas fa-play"></i> Start Mission
+                        </button>
+                        <button id="pauseMission" class="btn">
+                            <i class="fas fa-pause"></i> Pause Mission
+                        </button>
+                    </div>
+                    <div id="missionDetails" class="mission-details"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/webrtc.js"></script>
+    <script src="js/mission-manager.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html> 

@@ -1,0 +1,30 @@
+{
+    "name": "Sample Survey Mission",
+    "description": "A sample mission for testing the ground control station",
+    "waypoints": [
+        {
+            "latitude": 37.7749,
+            "longitude": -122.4194,
+            "altitude": 50,
+            "speed": 10
+        },
+        {
+            "latitude": 37.7750,
+            "longitude": -122.4195,
+            "altitude": 50,
+            "speed": 10
+        },
+        {
+            "latitude": 37.7751,
+            "longitude": -122.4196,
+            "altitude": 50,
+            "speed": 10
+        },
+        {
+            "latitude": 37.7752,
+            "longitude": -122.4197,
+            "altitude": 50,
+            "speed": 10
+        }
+    ]
+} 
